@@ -4151,6 +4151,12 @@ public:
 	virtual bool Exists(Handle handle) = 0;
 
 	/**
+		@brief
+		\~English	Get the current frame for the given handle
+	*/
+	virtual float GetFrame(Handle handle) = 0;
+
+	/**
 		@brief	エフェクトに使用されているインスタンス数を取得する。
 		@param	handle	[in]	インスタンスのハンドル
 		@return	インスタンス数

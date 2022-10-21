@@ -755,6 +755,15 @@ bool ManagerImplemented::Exists(Handle handle)
 	return false;
 }
 
+float ManagerImplemented::GetFrame(Handle handle)
+{
+	if (m_DrawSets.count(handle) > 0)
+	{
+		return m_DrawSets[handle].GlobalPointer->GetUpdatedFrame();
+	}
+	return 0;
+}
+
 int32_t ManagerImplemented::GetInstanceCount(Handle handle)
 {
 	if (m_DrawSets.count(handle) > 0)
