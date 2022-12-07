@@ -1,28 +1,13 @@
-
 cmake_minimum_required(VERSION 3.10)
 
-project(TestCpp)
+project(TakeScreenshots)
 
-set(effekseer_test_src
+set(effekseer_take_screenshots_src
     main.cpp
-    TestHelper.h
-    TestHelper.cpp
-    Runtime/BasicRendering.cpp
-    Runtime/RuntimeTest.cpp
-    Runtime/Performance.cpp
-    Runtime/TextureFormats.cpp
-    Runtime/Vertex.cpp
-    Runtime/ResourceManager.cpp
-    Runtime/Network.cpp
-    Runtime/Math.cpp
-    Runtime/Misc.cpp
-    Backend/Helper.h
-    Backend/Helper.cpp
-    Backend/Textures.cpp
-    Backend/Mesh.cpp
-    Backend/RenderPass.cpp
-    Backend/GPUParticle.cpp
-    Backend/OpenGL.cpp
+    TakeScreenshots.h
+    TakeScreenshots.cpp
+    Helper.h
+    Helper.cpp
 )
 
 include_directories(
@@ -46,24 +31,6 @@ list(APPEND common_lib EffekseerRendererGL)
 
 if(WIN32)
     list(APPEND common_lib EffekseerRendererDX11)
-    list(APPEND common_lib EffekseerRendererDX9)
-endif()
-
-if(BUILD_DX12 OR BUILD_METAL OR BUILD_VULKAN)
-    list(APPEND common_lib LLGI)
-endif()
-
-if(BUILD_DX12)
-    list(APPEND common_lib EffekseerRendererDX12)
-endif()
-
-
-if(BUILD_METAL)
-    list(APPEND common_lib EffekseerRendererMetal)
-endif()
-
-if(BUILD_VULKAN)
-    list(APPEND common_lib EffekseerRendererVulkan)
 endif()
 
 list(APPEND common_lib Effekseer)
@@ -103,74 +70,42 @@ else()
     endif()
 endif()
 
-add_executable(${PROJECT_NAME} ${effekseer_test_src})
+add_executable(${PROJECT_NAME} ${effekseer_take_screenshots_src})
 target_link_directories(${PROJECT_NAME} PRIVATE ${EFK_THIRDPARTY_LIBRARY_DIRECTORIES})
 target_link_libraries(${PROJECT_NAME} PRIVATE TestRuntimeFramework)
-
-if(BUILD_VULKAN)
-    find_package(Vulkan REQUIRED)
-
-    target_include_directories(
-        TestCpp
-        PRIVATE
-        ${Vulkan_INCLUDE_DIRS}
-    )
-    
-    target_link_libraries(
-        TestCpp
-        PRIVATE 
-        ${Vulkan_LIBRARIES}
-    )
-
-    # TODO Improve it
-    target_link_libraries(
-        TestCpp
-        PRIVATE 
-        glslang
-        SPIRV
-        OGLCompiler
-        OSDependent
-    )
-    
-    target_link_directories(
-        TestCpp
-        PRIVATE
-        ${CMAKE_CURRENT_BINARY_DIR}/../3rdParty/LLGI/EP/Install/glslang/lib
-    )
-endif()
 
 if (NOT APPLE)
     if(WIN32)
     target_link_libraries(
-        TestCpp
+        ${PROJECT_NAME}
         PRIVATE
         debug libglew32d
         optimized libglew32
     )
     else()
     target_link_libraries(
-        TestCpp
+        ${PROJECT_NAME}
         PRIVATE
         GLEW
     )
     endif()
 endif()
 
-add_dependencies(TestCpp ExternalProject_glfw)
+add_dependencies(TakeScreenshots ExternalProject_glfw)
 
 if(BUILD_WITH_EASY_PROFILER)
-    add_dependencies(TestCpp ExternalProject_easy_profiler)
+    add_dependencies(TakeScreenshots ExternalProject_easy_profiler)
 endif()
 
 if(UNIX AND NOT APPLE)
     find_package(X11 REQUIRED)
-    target_link_libraries(TestCpp PRIVATE ${X11_LIBRARIES})
+    target_link_libraries(TakeScreenshots PRIVATE ${X11_LIBRARIES})
     find_package(Threads REQUIRED)
-    target_link_libraries(TestCpp PRIVATE ${CMAKE_THREAD_LIBS_INIT})
+    target_link_libraries(TakeScreenshots PRIVATE ${CMAKE_THREAD_LIBS_INIT})
 endif()
 
 if(FROM_CI)
-    target_compile_definitions(TestCpp PRIVATE __FROM_CI__)
+    target_compile_definitions(TakeScreenshots PRIVATE __FROM_CI__)
 endif()
 
 # FIXME: Mixed measures with sln. for VS2015
@@ -181,14 +116,14 @@ if (APPLE)
 endif()
 
 if (MSVC)
-    set_target_properties(TestCpp PROPERTIES OUTPUT_NAME_DEBUG "TestCpp")
-    set_target_properties(TestCpp PROPERTIES OUTPUT_NAME_RELEASE "TestCpp")
+    set_target_properties(TakeScreenshots PROPERTIES OUTPUT_NAME_DEBUG "TakeScreenshots")
+    set_target_properties(TakeScreenshots PROPERTIES OUTPUT_NAME_RELEASE "TakeScreenshots")
 else()
-    set_target_properties(TestCpp PROPERTIES OUTPUT_NAME "TestCpp")
+    set_target_properties(TakeScreenshots PROPERTIES OUTPUT_NAME "TakeScreenshots")
 endif()
 
-FilterFolder("${effekseer_test_src}")
+FilterFolder("${effekseer_take_screenshots_src}")
 
 if(CLANG_FORMAT_ENABLED)
-    clang_format(TestCpp)
+    clang_format(TakeScreenshots)
 endif()
