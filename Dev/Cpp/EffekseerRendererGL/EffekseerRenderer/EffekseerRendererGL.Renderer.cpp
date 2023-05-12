@@ -7,6 +7,7 @@
 #include "EffekseerRendererGL.RendererImplemented.h"
 
 #include "EffekseerRendererGL.DeviceObject.h"
+#include "EffekseerRendererGL.GPUTimer.h"
 #include "EffekseerRendererGL.IndexBuffer.h"
 #include "EffekseerRendererGL.MaterialLoader.h"
 #include "EffekseerRendererGL.ModelRenderer.h"
@@ -86,7 +87,7 @@ TextureProperty GetTextureProperty(::Effekseer::Backend::TextureRef texture)
 	}
 }
 
-RendererRef Renderer::Create(int32_t squareMaxCount, OpenGLDeviceType deviceType, bool isExtensionsEnabled)
+RendererRef Renderer::Create(int32_t squareMaxCount, OpenGLDeviceType deviceType, bool isExtensionsEnabled, bool isPremultipliedAlphaEnabled)
 {
 	GLCheckError();
 	auto device = CreateGraphicsDevice(deviceType, isExtensionsEnabled);
@@ -95,10 +96,10 @@ RendererRef Renderer::Create(int32_t squareMaxCount, OpenGLDeviceType deviceType
 		return nullptr;
 	}
 
-	return Create(device, squareMaxCount);
+	return Create(device, squareMaxCount, isPremultipliedAlphaEnabled);
 }
 
-RendererRef Renderer::Create(Effekseer::Backend::GraphicsDeviceRef graphicsDevice, int32_t squareMaxCount)
+RendererRef Renderer::Create(Effekseer::Backend::GraphicsDeviceRef graphicsDevice, int32_t squareMaxCount, bool isPremultipliedAlphaEnabled)
 {
 	GLCheckError();
 	if (graphicsDevice == nullptr)
@@ -111,6 +112,7 @@ RendererRef Renderer::Create(Effekseer::Backend::GraphicsDeviceRef graphicsDevic
 	auto renderer = ::Effekseer::MakeRefPtr<RendererImplemented>(squareMaxCount, g);
 	if (renderer->Initialize())
 	{
+		renderer->GetImpl()->IsPremultipliedAlphaEnabled = isPremultipliedAlphaEnabled;
 		return renderer;
 	}
 	return nullptr;
@@ -756,6 +758,14 @@ void RendererImplemented::SetSquareMaxCount(int32_t count)
 ::Effekseer::TrackRendererRef RendererImplemented::CreateTrackRenderer()
 {
 	return ::Effekseer::TrackRendererRef(new ::EffekseerRenderer::TrackRendererBase<RendererImplemented, false>(this));
+}
+
+//----------------------------------------------------------------------------------
+//
+//----------------------------------------------------------------------------------
+::Effekseer::GPUTimerRef RendererImplemented::CreateGPUTimer()
+{
+	return ::Effekseer::MakeRefPtr<GPUTimer>(this);
 }
 
 //----------------------------------------------------------------------------------

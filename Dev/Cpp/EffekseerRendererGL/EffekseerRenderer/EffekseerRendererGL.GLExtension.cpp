@@ -237,10 +237,33 @@ static FP_glDrawElementsInstancedANGLE g_glDrawElementsInstancedANGLE = nullptr;
 
 #endif
 
+#if defined(_WIN32) || defined(__EFFEKSEER_RENDERER_GL__) || defined(__EFFEKSEER_RENDERER_GLES2__) || defined(__EFFEKSEER_RENDERER_GLES3__)
+
+typedef void(EFK_STDCALL* FP_glGenQueriesEXT)(GLsizei n, GLuint* ids);
+typedef void(EFK_STDCALL* FP_glDeleteQueriesEXT)(GLsizei n, const GLuint* ids);
+typedef void(EFK_STDCALL* FP_glBeginQueryEXT)(GLenum target, GLuint id);
+typedef void(EFK_STDCALL* FP_glEndQueryEXT)(GLenum target);
+typedef void(EFK_STDCALL* FP_glGetQueryObjectivEXT)(GLuint id, GLenum pname, GLint* params);
+typedef void(EFK_STDCALL* FP_glGetQueryObjectuivEXT)(GLuint id, GLenum pname, GLuint* params);
+typedef void(EFK_STDCALL* FP_glGetQueryObjecti64vEXT)(GLuint id, GLenum pname, int64_t* params);
+typedef void(EFK_STDCALL* FP_glGetQueryObjectui64vEXT)(GLuint id, GLenum pname, uint64_t* params);
+
+static FP_glGenQueriesEXT g_glGenQueriesEXT = nullptr;
+static FP_glDeleteQueriesEXT g_glDeleteQueriesEXT = nullptr;
+static FP_glBeginQueryEXT g_glBeginQueryEXT = nullptr;
+static FP_glEndQueryEXT g_glEndQueryEXT = nullptr;
+static FP_glGetQueryObjectivEXT g_glGetQueryObjectivEXT = nullptr;
+static FP_glGetQueryObjectuivEXT g_glGetQueryObjectuivEXT = nullptr;
+static FP_glGetQueryObjecti64vEXT g_glGetQueryObjecti64vEXT = nullptr;
+static FP_glGetQueryObjectui64vEXT g_glGetQueryObjectui64vEXT = nullptr;
+
+#endif
+
 static bool g_isInitialized = false;
 static bool g_isSupportedVertexArray = false;
 static bool g_isSurrpotedBufferRange = false;
 static bool g_isSurrpotedMapBuffer = false;
+static bool g_isSupportedQueries = false;
 static OpenGLDeviceType g_deviceType = OpenGLDeviceType::OpenGL2;
 
 #if _WIN32
@@ -258,6 +281,26 @@ static OpenGLDeviceType g_deviceType = OpenGLDeviceType::OpenGL2;
 	{                                                                                            \
 		Effekseer::Log(Effekseer::LogType::Error, "Failed to get proc : " + std::string(#name)); \
 		return false;                                                                            \
+	}
+#endif
+
+#if _WIN32
+#define GET_PROC_EXT(name)                                                                         \
+	g_##name##EXT = (FP_##name##EXT)wglGetProcAddress(#name "EXT");                                \
+	if (g_##name##EXT == nullptr)                                                                  \
+		g_##name##EXT = (FP_##name##EXT)wglGetProcAddress(#name);                                  \
+	if (g_##name##EXT == nullptr)                                                                  \
+	{                                                                                              \
+		Effekseer::Log(Effekseer::LogType::Warning, "Failed to get proc : " + std::string(#name)); \
+	}
+#elif defined(__EFFEKSEER_RENDERER_GLES2__) || defined(__EFFEKSEER_RENDERER_GLES3__)
+#define GET_PROC_EXT(name)                                                                         \
+	g_##name##EXT = (FP_##name##EXT)eglGetProcAddress(#name "EXT");                                \
+	if (g_##name##EXT == nullptr)                                                                  \
+		(FP_##name##EXT) eglGetProcAddress(#name);                                                 \
+	if (g_##name##EXT == nullptr)                                                                  \
+	{                                                                                              \
+		Effekseer::Log(Effekseer::LogType::Warning, "Failed to get proc : " + std::string(#name)); \
 	}
 #endif
 
@@ -369,7 +412,22 @@ bool Initialize(OpenGLDeviceType deviceType, bool isExtensionsEnabled)
 	g_isSupportedVertexArray = (g_glGenVertexArrays && g_glDeleteVertexArrays && g_glBindVertexArray);
 	g_isSurrpotedBufferRange = (g_glMapBufferRange && g_glUnmapBuffer);
 	g_isSurrpotedMapBuffer = (g_glMapBuffer && g_glUnmapBuffer);
+#endif
 
+#if defined(_WIN32) || defined(__EFFEKSEER_RENDERER_GL__) || defined(__EFFEKSEER_RENDERER_GLES2__) || defined(__EFFEKSEER_RENDERER_GLES3__)
+
+#if !defined(__APPLE__)
+	GET_PROC_EXT(glGenQueries);
+	GET_PROC_EXT(glDeleteQueries);
+	GET_PROC_EXT(glBeginQuery);
+	GET_PROC_EXT(glEndQuery);
+	GET_PROC_EXT(glGetQueryObjectiv);
+	GET_PROC_EXT(glGetQueryObjectuiv);
+	GET_PROC_EXT(glGetQueryObjecti64v);
+	GET_PROC_EXT(glGetQueryObjectui64v);
+#endif
+
+	g_isSupportedQueries = (g_glGenQueriesEXT && g_glDeleteQueriesEXT && g_glBeginQueryEXT && g_glEndQueryEXT && g_glGetQueryObjectuivEXT && g_glGetQueryObjectivEXT && g_glGetQueryObjectui64vEXT && g_glGetQueryObjecti64vEXT);
 #endif
 
 #if defined(__EFFEKSEER_RENDERER_GLES2__)
@@ -432,6 +490,7 @@ bool Initialize(OpenGLDeviceType deviceType, bool isExtensionsEnabled)
 	{
 		g_isSupportedVertexArray = true;
 		g_isSurrpotedBufferRange = true;
+		g_isSupportedQueries = true;
 	}
 	if (deviceType == OpenGLDeviceType::OpenGL3)
 	{
@@ -457,6 +516,11 @@ bool IsSupportedBufferRange()
 bool IsSupportedMapBuffer()
 {
 	return g_isSurrpotedMapBuffer;
+}
+
+bool IsSupportedQueries()
+{
+	return g_isSupportedQueries;
 }
 
 void MakeMapBufferInvalid()
@@ -1025,6 +1089,78 @@ void glCopyTexSubImage3D(GLenum target,
 #elif defined(__EFFEKSEER_RENDERER_GLES2__) || defined(__EFFEKSEER_RENDERER_GL2__)
 #else
 	::glCopyTexSubImage3D(target, level, xoffset, yoffset, zoffset, x, y, width, height);
+#endif
+}
+
+void glGenQueries(GLsizei n, GLuint* ids)
+{
+#if defined(_WIN32) || defined(__EFFEKSEER_RENDERER_GL__) || defined(__EFFEKSEER_RENDERER_GLES2__) || defined(__EFFEKSEER_RENDERER_GLES3__)
+	g_glGenQueriesEXT(n, ids);
+#else
+	::glGenQueries(n, ids);
+#endif
+}
+
+void glDeleteQueries(GLsizei n, const GLuint* ids)
+{
+#if defined(_WIN32) || defined(__EFFEKSEER_RENDERER_GL__) || defined(__EFFEKSEER_RENDERER_GLES2__) || defined(__EFFEKSEER_RENDERER_GLES3__)
+	g_glDeleteQueriesEXT(n, ids);
+#else
+	::glDeleteQueries(n, ids);
+#endif
+}
+
+void glBeginQuery(GLenum target, GLuint id)
+{
+#if defined(_WIN32) || defined(__EFFEKSEER_RENDERER_GL__) || defined(__EFFEKSEER_RENDERER_GLES2__) || defined(__EFFEKSEER_RENDERER_GLES3__)
+	g_glBeginQueryEXT(target, id);
+#else
+	::glBeginQuery(target, id);
+#endif
+}
+
+void glEndQuery(GLenum target)
+{
+#if defined(_WIN32) || defined(__EFFEKSEER_RENDERER_GL__) || defined(__EFFEKSEER_RENDERER_GLES2__) || defined(__EFFEKSEER_RENDERER_GLES3__)
+	g_glEndQueryEXT(target);
+#else
+	::glEndQuery(target);
+#endif
+}
+
+void glGetQueryObjectiv(GLuint id, GLenum pname, GLint* params)
+{
+#if defined(_WIN32) || defined(__EFFEKSEER_RENDERER_GL__) || defined(__EFFEKSEER_RENDERER_GLES2__) || defined(__EFFEKSEER_RENDERER_GLES3__)
+	g_glGetQueryObjectivEXT(id, pname, params);
+#else
+	::glGetQueryObjectiv(id, pname, params);
+#endif
+}
+
+void glGetQueryObjectuiv(GLuint id, GLenum pname, GLuint* params)
+{
+#if defined(_WIN32) || defined(__EFFEKSEER_RENDERER_GL__) || defined(__EFFEKSEER_RENDERER_GLES2__) || defined(__EFFEKSEER_RENDERER_GLES3__)
+	g_glGetQueryObjectuivEXT(id, pname, params);
+#else
+	::glGetQueryObjectuiv(id, pname, params);
+#endif
+}
+
+void glGetQueryObjecti64v(GLuint id, GLenum pname, int64_t* params)
+{
+#if defined(_WIN32) || defined(__EFFEKSEER_RENDERER_GL__) || defined(__EFFEKSEER_RENDERER_GLES2__) || defined(__EFFEKSEER_RENDERER_GLES3__)
+	g_glGetQueryObjecti64vEXT(id, pname, params);
+#else
+	::glGetQueryObjecti64v(id, pname, params);
+#endif
+}
+
+void glGetQueryObjectui64v(GLuint id, GLenum pname, uint64_t* params)
+{
+#if defined(_WIN32) || defined(__EFFEKSEER_RENDERER_GL__) || defined(__EFFEKSEER_RENDERER_GLES2__) || defined(__EFFEKSEER_RENDERER_GLES3__)
+	g_glGetQueryObjectui64vEXT(id, pname, params);
+#else
+	::glGetQueryObjectui64v(id, pname, params);
 #endif
 }
 

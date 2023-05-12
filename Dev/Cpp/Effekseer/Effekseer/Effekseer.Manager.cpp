@@ -24,6 +24,7 @@
 #include "Renderer/Effekseer.RingRenderer.h"
 #include "Renderer/Effekseer.SpriteRenderer.h"
 #include "Renderer/Effekseer.TrackRenderer.h"
+#include "Renderer/Effekseer.GPUTimer.h"
 
 #include "Effekseer.SoundLoader.h"
 #include "Sound/Effekseer.SoundPlayer.h"
@@ -217,6 +218,12 @@ void ManagerImplemented::GCDrawSet(bool isRemovingManager)
 			}
 
 			drawset.ParameterPointer = nullptr;
+
+			if (m_gpuTimer != nullptr)
+			{
+				m_gpuTimer->RemoveTimer(drawset.GlobalPointer);
+			}
+
 			ES_SAFE_DELETE(drawset.GlobalPointer);
 
 			it = m_RemovingDrawSets[1].erase(it);
@@ -620,6 +627,16 @@ TrackRendererRef ManagerImplemented::GetTrackRenderer()
 void ManagerImplemented::SetTrackRenderer(TrackRendererRef renderer)
 {
 	m_trackRenderer = renderer;
+}
+
+GPUTimerRef ManagerImplemented::GetGPUTimer()
+{
+	return m_gpuTimer;
+}
+
+void ManagerImplemented::SetGPUTimer(GPUTimerRef gpuTimer)
+{
+	m_gpuTimer = gpuTimer;
 }
 
 SoundPlayerRef ManagerImplemented::GetSoundPlayer()
@@ -1318,28 +1335,6 @@ void ManagerImplemented::Update(const UpdateParameter& parameter)
 {
 	PROFILER_BLOCK("Manager::Update", profiler::colors::Red);
 
-	if (m_WorkerThreads.size() == 0)
-	{
-		DoUpdate(parameter);
-	}
-	else
-	{
-		m_WorkerThreads[0].WaitForComplete();
-		// Process on worker thread
-		m_WorkerThreads[0].RunAsync([this, parameter]() { DoUpdate(parameter); });
-
-		if (parameter.SyncUpdate)
-		{
-			m_WorkerThreads[0].WaitForComplete();
-		}
-	}
-
-	ExecuteSounds();
-}
-
-void ManagerImplemented::DoUpdate(const UpdateParameter& parameter)
-{
-	PROFILER_BLOCK("Manager::DoUpdate", profiler::colors::Red);
 	// start to measure time
 	int64_t beginTime = ::Effekseer::GetTime();
 
@@ -1377,6 +1372,35 @@ void ManagerImplemented::DoUpdate(const UpdateParameter& parameter)
 	}
 
 	BeginUpdate();
+
+	if (m_WorkerThreads.size() == 0)
+	{
+		DoUpdate(parameter, times);
+	}
+	else
+	{
+		m_WorkerThreads[0].WaitForComplete();
+		// Process on worker thread
+		m_WorkerThreads[0].RunAsync([this, parameter, times]()
+									{ DoUpdate(parameter, times); });
+
+		if (parameter.SyncUpdate)
+		{
+			m_WorkerThreads[0].WaitForComplete();
+		}
+	}
+
+	// end to measure time
+	m_updateTime = (int)(Effekseer::GetTime() - beginTime);
+
+	EndUpdate();
+
+	ExecuteSounds();
+}
+
+void ManagerImplemented::DoUpdate(const UpdateParameter& parameter, int times)
+{
+	PROFILER_BLOCK("Manager::DoUpdate", profiler::colors::Red);
 
 	for (int32_t t = 0; t < times; t++)
 	{
@@ -1474,11 +1498,6 @@ void ManagerImplemented::DoUpdate(const UpdateParameter& parameter)
 			drawSet.second.AreChildrenOfRootGenerated = true;
 		}
 	}
-
-	EndUpdate();
-
-	// end to measure time
-	m_updateTime = (int)(Effekseer::GetTime() - beginTime);
 }
 
 void ManagerImplemented::BeginUpdate()
@@ -1755,6 +1774,11 @@ void ManagerImplemented::Draw(const Manager::DrawParameter& drawParameter)
 	// start to record a time
 	int64_t beginTime = ::Effekseer::GetTime();
 
+	if (m_gpuTimer != nullptr)
+	{
+		m_gpuTimer->BeginFrame();
+	}
+
 	const auto cullingPlanes = GeometryUtility::CalculateFrustumPlanes(drawParameter.ViewProjectionMatrix, drawParameter.ZNear, drawParameter.ZFar, GetSetting()->GetCoordinateSystem());
 
 	const auto render = [this, &drawParameter, &cullingPlanes](DrawSet& drawSet) -> void {
@@ -1765,6 +1789,8 @@ void ManagerImplemented::Draw(const Manager::DrawParameter& drawParameter)
 
 		if (drawSet.IsAutoDrawing)
 		{
+			if (m_gpuTimer != nullptr) m_gpuTimer->Start(drawSet.GlobalPointer, 0);
+
 			if (drawSet.GlobalPointer->RenderedInstanceContainers.size() > 0)
 			{
 				for (auto& c : drawSet.GlobalPointer->RenderedInstanceContainers)
@@ -1779,6 +1805,8 @@ void ManagerImplemented::Draw(const Manager::DrawParameter& drawParameter)
 			{
 				drawSet.InstanceContainerPointer->Draw(true);
 			}
+
+			if (m_gpuTimer != nullptr) m_gpuTimer->Stop(drawSet.GlobalPointer, 0);
 		}
 	};
 
@@ -1797,6 +1825,11 @@ void ManagerImplemented::Draw(const Manager::DrawParameter& drawParameter)
 		{
 			render(m_renderingDrawSets[i]);
 		}
+	}
+
+	if (m_gpuTimer != nullptr)
+	{
+		m_gpuTimer->EndFrame();
 	}
 
 	// calculate a time
@@ -1820,6 +1853,8 @@ void ManagerImplemented::DrawBack(const Manager::DrawParameter& drawParameter)
 
 		if (drawSet.IsAutoDrawing)
 		{
+			if (m_gpuTimer != nullptr) m_gpuTimer->Start(drawSet.GlobalPointer, 0);
+
 			auto e = (EffectImplemented*)drawSet.ParameterPointer.Get();
 			for (int32_t j = 0; j < e->renderingNodesThreshold; j++)
 			{
@@ -1828,6 +1863,8 @@ void ManagerImplemented::DrawBack(const Manager::DrawParameter& drawParameter)
 
 				drawSet.GlobalPointer->RenderedInstanceContainers[j]->Draw(false);
 			}
+
+			if (m_gpuTimer != nullptr) m_gpuTimer->Stop(drawSet.GlobalPointer, 0);
 		}
 	};
 
@@ -1859,6 +1896,11 @@ void ManagerImplemented::DrawFront(const Manager::DrawParameter& drawParameter)
 	// start to record a time
 	int64_t beginTime = ::Effekseer::GetTime();
 
+	if (m_gpuTimer != nullptr)
+	{
+		m_gpuTimer->BeginFrame();
+	}
+
 	const auto cullingPlanes = GeometryUtility::CalculateFrustumPlanes(drawParameter.ViewProjectionMatrix, drawParameter.ZNear, drawParameter.ZFar, GetSetting()->GetCoordinateSystem());
 
 	const auto render = [this, &drawParameter, &cullingPlanes](DrawSet& drawSet) -> void {
@@ -1869,6 +1911,8 @@ void ManagerImplemented::DrawFront(const Manager::DrawParameter& drawParameter)
 
 		if (drawSet.IsAutoDrawing)
 		{
+			if (m_gpuTimer != nullptr) m_gpuTimer->Start(drawSet.GlobalPointer, 1);
+
 			if (drawSet.GlobalPointer->RenderedInstanceContainers.size() > 0)
 			{
 				auto e = (EffectImplemented*)drawSet.ParameterPointer.Get();
@@ -1884,6 +1928,8 @@ void ManagerImplemented::DrawFront(const Manager::DrawParameter& drawParameter)
 			{
 				drawSet.InstanceContainerPointer->Draw(true);
 			}
+
+			if (m_gpuTimer != nullptr) m_gpuTimer->Stop(drawSet.GlobalPointer, 1);
 		}
 	};
 
@@ -1904,6 +1950,11 @@ void ManagerImplemented::DrawFront(const Manager::DrawParameter& drawParameter)
 		}
 	}
 
+	if (m_gpuTimer != nullptr)
+	{
+		m_gpuTimer->EndFrame();
+	}
+
 	// calculate a time
 	m_drawTime = (int)(Effekseer::GetTime() - beginTime);
 }
@@ -1922,6 +1973,10 @@ Handle ManagerImplemented::Play(const EffectRef& effect, const Vector3D& positio
 
 	// Create root
 	InstanceGlobal* pGlobal = new InstanceGlobal();
+	if (m_gpuTimer != nullptr)
+	{
+		m_gpuTimer->AddTimer(pGlobal);
+	}
 
 	int32_t randomSeed = 0;
 	if (e->m_defaultRandomSeed >= 0)
@@ -1990,6 +2045,8 @@ void ManagerImplemented::DrawHandle(Handle handle, const Manager::DrawParameter&
 			return;
 		}
 
+		if (m_gpuTimer != nullptr) m_gpuTimer->Start(drawSet.GlobalPointer, 0);
+
 		if (drawSet.GlobalPointer->RenderedInstanceContainers.size() > 0)
 		{
 			for (auto& c : drawSet.GlobalPointer->RenderedInstanceContainers)
@@ -2004,6 +2061,8 @@ void ManagerImplemented::DrawHandle(Handle handle, const Manager::DrawParameter&
 		{
 			drawSet.InstanceContainerPointer->Draw(true);
 		}
+
+		if (m_gpuTimer != nullptr) m_gpuTimer->Stop(drawSet.GlobalPointer, 0);
 	}
 }
 
@@ -2029,6 +2088,8 @@ void ManagerImplemented::DrawHandleBack(Handle handle, const Manager::DrawParame
 			return;
 		}
 
+		if (m_gpuTimer != nullptr) m_gpuTimer->Start(drawSet.GlobalPointer, 0);
+
 		for (int32_t i = 0; i < e->renderingNodesThreshold; i++)
 		{
 			if (IsClippedWithDepth(drawSet, drawSet.GlobalPointer->RenderedInstanceContainers[i], drawParameter))
@@ -2036,6 +2097,8 @@ void ManagerImplemented::DrawHandleBack(Handle handle, const Manager::DrawParame
 
 			drawSet.GlobalPointer->RenderedInstanceContainers[i]->Draw(false);
 		}
+
+		if (m_gpuTimer != nullptr) m_gpuTimer->Stop(drawSet.GlobalPointer, 0);
 	}
 }
 
@@ -2061,6 +2124,8 @@ void ManagerImplemented::DrawHandleFront(Handle handle, const Manager::DrawParam
 			return;
 		}
 
+		if (m_gpuTimer != nullptr) m_gpuTimer->Start(drawSet.GlobalPointer, 1);
+
 		if (drawSet.GlobalPointer->RenderedInstanceContainers.size() > 0)
 		{
 			for (size_t i = e->renderingNodesThreshold; i < drawSet.GlobalPointer->RenderedInstanceContainers.size(); i++)
@@ -2075,6 +2140,8 @@ void ManagerImplemented::DrawHandleFront(Handle handle, const Manager::DrawParam
 		{
 			drawSet.InstanceContainerPointer->Draw(true);
 		}
+
+		if (m_gpuTimer != nullptr) m_gpuTimer->Stop(drawSet.GlobalPointer, 1);
 	}
 }
 
@@ -2098,7 +2165,34 @@ int ManagerImplemented::GetUpdateTime() const
 int ManagerImplemented::GetDrawTime() const
 {
 	return m_drawTime;
-};
+}
+
+int32_t ManagerImplemented::GetGPUTime() const
+{
+	if (m_gpuTimer != nullptr)
+	{
+		int32_t timeCount = 0;
+		for (auto& kv : m_DrawSets)
+		{
+			timeCount += m_gpuTimer->GetResult(kv.second.GlobalPointer);
+		}
+		return timeCount;
+	}
+	return 0;
+}
+
+int32_t ManagerImplemented::GetGPUTime(Handle handle) const
+{
+	if (m_gpuTimer != nullptr)
+	{
+		auto it = m_DrawSets.find(handle);
+		if (it != m_DrawSets.end())
+		{
+			return m_gpuTimer->GetResult(it->second.GlobalPointer);
+		}
+	}
+	return 0;
+}
 
 int32_t ManagerImplemented::GetRestInstancesCount() const
 {
